@@ -6,7 +6,8 @@ import ItalianPlayingCard from "./ItalianPlayingCard";
 
 const SolitarioNapoletano = () => {
   // Game state
-  const [deck, setDeck] = useState([]);
+  const [stock, setStock] = useState([]); // Draw pile (mazzo)
+  const [waste, setWaste] = useState([]); // Discard pile
   const [tableau, setTableau] = useState([
     [],
     [],
@@ -20,7 +21,6 @@ const SolitarioNapoletano = () => {
     [],
   ]);
   const [foundations, setFoundations] = useState([[], [], [], []]);
-  const [waste, setWaste] = useState([]);
   const [selectedCard, setSelectedCard] = useState(null);
   const [gameWon, setGameWon] = useState(false);
   const [moveCount, setMoveCount] = useState(0);
@@ -72,21 +72,27 @@ const SolitarioNapoletano = () => {
     const shuffledDeck = initializeDeck();
     const newTableau = [[], [], [], [], [], [], [], [], [], []];
 
-    // Deal 4 cards to each of the 10 tableau piles
+    // Deal 3 cards to each of the 10 tableau piles (all face up for this variant)
     let cardIndex = 0;
-    for (let row = 0; row < 4; row++) {
+    for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 10; col++) {
-        if (cardIndex < shuffledDeck.length) {
-          const card = { ...shuffledDeck[cardIndex], faceDown: row < 3 };
+        if (cardIndex < 30) {
+          const card = { ...shuffledDeck[cardIndex], faceDown: false };
           newTableau[col].push(card);
           cardIndex++;
         }
       }
     }
 
+    // Remaining 10 cards go to stock
+    const newStock = shuffledDeck
+      .slice(30)
+      .map((card) => ({ ...card, faceDown: true }));
+
     setTableau(newTableau);
-    setFoundations([[], [], [], []]);
+    setStock(newStock);
     setWaste([]);
+    setFoundations([[], [], [], []]);
     setSelectedCard(null);
     setGameWon(false);
     setMoveCount(0);
@@ -110,6 +116,30 @@ const SolitarioNapoletano = () => {
 
     const topCard = targetPile[targetPile.length - 1];
     return card.value === topCard.value - 1; // Must be one rank lower
+  };
+
+  // Draw card from stock
+  const drawCard = () => {
+    if (stock.length === 0) {
+      // If stock is empty, reset it with cards from waste
+      if (waste.length > 0) {
+        const newStock = [...waste]
+          .reverse()
+          .map((card) => ({ ...card, faceDown: true }));
+        setStock(newStock);
+        setWaste([]);
+        setMoveCount(moveCount + 1);
+      }
+    } else {
+      // Draw one card from stock to waste
+      const newStock = [...stock];
+      const drawnCard = newStock.pop();
+      drawnCard.faceDown = false;
+
+      setStock(newStock);
+      setWaste([...waste, drawnCard]);
+      setMoveCount(moveCount + 1);
+    }
   };
 
   // Handle card click
@@ -159,19 +189,14 @@ const SolitarioNapoletano = () => {
   const moveCard = (from, to) => {
     const newTableau = [...tableau];
     const newFoundations = [...foundations];
+    const newWaste = [...waste];
 
     // Remove card from source
     let card;
     if (from.source === "tableau") {
       card = newTableau[from.sourceIndex].pop();
-      // Flip face-down card if exposed
-      if (newTableau[from.sourceIndex].length > 0) {
-        const topCard =
-          newTableau[from.sourceIndex][newTableau[from.sourceIndex].length - 1];
-        if (topCard.faceDown) {
-          topCard.faceDown = false;
-        }
-      }
+    } else if (from.source === "waste") {
+      card = newWaste.pop();
     }
 
     // Add card to destination
@@ -183,6 +208,7 @@ const SolitarioNapoletano = () => {
 
     setTableau(newTableau);
     setFoundations(newFoundations);
+    setWaste(newWaste);
     setMoveCount(moveCount + 1);
 
     // Check for win
@@ -200,28 +226,30 @@ const SolitarioNapoletano = () => {
     let moved = false;
     const newTableau = [...tableau];
     const newFoundations = [...foundations];
+    const newWaste = [...waste];
+
+    // Check waste pile first
+    if (newWaste.length > 0) {
+      const topCard = newWaste[newWaste.length - 1];
+      for (let j = 0; j < 4; j++) {
+        if (canMoveToFoundation(topCard, newFoundations[j])) {
+          newFoundations[j].push(newWaste.pop());
+          moved = true;
+          break;
+        }
+      }
+    }
 
     // Check each tableau pile
     for (let i = 0; i < newTableau.length; i++) {
       if (newTableau[i].length > 0) {
         const topCard = newTableau[i][newTableau[i].length - 1];
-        if (!topCard.faceDown) {
-          // Try each foundation
-          for (let j = 0; j < 4; j++) {
-            if (canMoveToFoundation(topCard, newFoundations[j])) {
-              newFoundations[j].push(newTableau[i].pop());
-
-              // Flip face-down card if exposed
-              if (newTableau[i].length > 0) {
-                const newTopCard = newTableau[i][newTableau[i].length - 1];
-                if (newTopCard.faceDown) {
-                  newTopCard.faceDown = false;
-                }
-              }
-
-              moved = true;
-              break;
-            }
+        // Try each foundation
+        for (let j = 0; j < 4; j++) {
+          if (canMoveToFoundation(topCard, newFoundations[j])) {
+            newFoundations[j].push(newTableau[i].pop());
+            moved = true;
+            break;
           }
         }
       }
@@ -230,6 +258,7 @@ const SolitarioNapoletano = () => {
     if (moved) {
       setTableau(newTableau);
       setFoundations(newFoundations);
+      setWaste(newWaste);
       setMoveCount(moveCount + 1);
 
       // Check for win
@@ -269,6 +298,92 @@ const SolitarioNapoletano = () => {
           >
             Auto-Completa
           </button>
+        </div>
+      </div>
+
+      {/* Stock and Waste */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold text-amber-200 mb-2">
+          Mazzo e Scarti
+        </h2>
+        <div className="flex gap-8 justify-center">
+          {/* Stock (draw pile) */}
+          <div className="relative">
+            <div
+              onClick={drawCard}
+              className="relative w-32 h-48 cursor-pointer hover:scale-105 transition-transform"
+            >
+              {stock.length > 0 ? (
+                <>
+                  {/* Show multiple cards stacked */}
+                  {stock.length > 2 && (
+                    <div className="absolute inset-0 transform translate-x-1 translate-y-1">
+                      <ItalianPlayingCard faceDown={true} />
+                    </div>
+                  )}
+                  {stock.length > 1 && (
+                    <div className="absolute inset-0 transform translate-x-0.5 translate-y-0.5">
+                      <ItalianPlayingCard faceDown={true} />
+                    </div>
+                  )}
+                  <div className="absolute inset-0">
+                    <ItalianPlayingCard faceDown={true} />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-amber-200 text-lg font-bold bg-emerald-900/80 px-2 py-1 rounded">
+                      {stock.length}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="w-full h-full border-2 border-amber-600/30 border-dashed rounded-lg flex items-center justify-center bg-emerald-900/20">
+                  <span className="text-amber-600/50 text-lg">↻</span>
+                </div>
+              )}
+            </div>
+            <p className="text-amber-200/70 text-center mt-2">Mazzo</p>
+          </div>
+
+          {/* Waste */}
+          <div className="relative">
+            <div className="relative w-32 h-48">
+              {waste.length === 0 ? (
+                <div className="w-full h-full border-2 border-amber-600/30 border-dashed rounded-lg bg-emerald-900/20" />
+              ) : (
+                <div className="absolute inset-0">
+                  {/* Show last 3 cards fanned out */}
+                  {waste.slice(-3).map((card, index) => (
+                    <div
+                      key={card.id}
+                      className={`absolute cursor-pointer transition-all ${
+                        selectedCard?.card.id === card.id
+                          ? "ring-4 ring-amber-400 z-20"
+                          : ""
+                      }`}
+                      style={{
+                        left: `${index * 20}px`,
+                        zIndex:
+                          index + (selectedCard?.card.id === card.id ? 20 : 0),
+                      }}
+                      onClick={() => {
+                        // Only allow clicking the top card
+                        if (index === waste.slice(-3).length - 1) {
+                          handleCardClick(card, "waste", waste.length - 1);
+                        }
+                      }}
+                    >
+                      <ItalianPlayingCard
+                        suit={card.suit}
+                        rank={card.rank}
+                        faceDown={false}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-amber-200/70 text-center mt-2">Scarti</p>
+          </div>
         </div>
       </div>
 
